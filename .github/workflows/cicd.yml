@@ -31,19 +31,21 @@ jobs:
           printf "%s\n" "${{ secrets.TOUGE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p 51279 -H ${{ secrets.TOUGE_SERVER_IP }} >> ~/.ssh/known_hosts
+          echo "SSH 环境配置完成，开始连接服务器..."
           ssh -v -p 51279 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa root@${{ secrets.TOUGE_SERVER_IP }} << 'EOF'
             set -e
-            cd /root/flask-web-app || { mkdir -p /root/flask-web-app && cd /root/flask-web-app; }
-            if [ ! -d ".git" ]; then
-              git clone https://github.com/zhangtianyi797/flask-web-app.git .
-            else
-              git pull origin main
-            fi
+            echo "===== 部署流程开始 ====="
+            echo "当前用户: $(whoami), 主机: $(hostname)"
+            cd /root/flask-web-app || { echo "项目目录不存在，创建并进入"; mkdir -p /root/flask-web-app && cd /root/flask-web-app; }
+            echo "拉取最新代码..."
+            git pull origin main || { echo "Git 拉取失败"; exit 1; }
+            echo "安装依赖..."
             pip3 install --upgrade pip
-            pip3 install -r requirements.txt
-            supervisorctl restart flask-web-app || { supervisorctl add flask-web-app && supervisorctl start flask-web-app; }
-            supervisorctl status flask-web-app
-            echo "部署完成"
+            pip3 install -r requirements.txt || { echo "依赖安装失败"; exit 1; }
+            echo "重启服务..."
+            supervisorctl restart flask-web-app || { echo "服务重启失败"; exit 1; }
+            echo "服务状态: $(supervisorctl status flask-web-app)"
+            echo "===== 部署流程结束 ====="
           EOF
         env:
           TOUGE_SSH_PRIVATE_KEY: ${{ secrets.TOUGE_SSH_PRIVATE_KEY }}
