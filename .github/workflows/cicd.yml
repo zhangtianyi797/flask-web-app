@@ -50,7 +50,7 @@ jobs:
             cd /root/flask-web-app || { mkdir -p /root/flask-web-app && cd /root/flask-web-app; }
             # 拉取最新代码（首次克隆需用 git clone，后续用 git pull）
             if [ ! -d ".git" ]; then
-              git clone https://github.com/zhangtianyi797/flash-web-app.git .
+              git clone https://github.com/zhangtianyi797/flask-web-app.git .
             else
               git pull origin main
             fi
