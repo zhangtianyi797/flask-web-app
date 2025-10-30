@@ -1,0 +1,68 @@
+name: Deploy Flask App to Touge Server
+on:
+  push:
+    branches:
+      - main  # 推送到 main 分支触发自动化
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # 步骤1：拉取 GitHub 仓库代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # 步骤2：配置本地 Python 环境
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      # 步骤3：安装依赖并执行测试（测试失败则不部署）
+      - name: Install dependencies and run tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pytest tests/ -v  # 执行测试用例
+        continue-on-error: false  # 测试失败则终止流程
+
+      # 步骤4：通过 SSH 部署到头歌服务器（关键！替换端口为 51279）
+      - name: Deploy to Touge Server via SSH (Port 51279)
+        run: |
+          # 配置 SSH 环境
+          mkdir -p ~/.ssh
+          # 写入私钥（从 GitHub Secrets 读取）
+          printf "%s\n" "${{ secrets.TOUGE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa  # SSH 强制要求权限为 600
+          # 信任服务器（避免首次连接提示）
+          ssh-keyscan -p 51279 -H ${{ secrets.TOUGE_SERVER_IP }} >> ~/.ssh/known_hosts
+          
+          # 连接服务器执行部署命令
+          ssh -v -p 51279 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa root@${{ secrets.TOUGE_SERVER_IP }} << 'EOF'
+            set -e  # 命令出错则终止
+            echo "成功连接服务器"
+            # 进入项目目录（若不存在则创建）
+            cd /root/flask-web-app || { mkdir -p /root/flask-web-app && cd /root/flask-web-app; }
+            # 拉取最新代码（首次克隆需用 git clone，后续用 git pull）
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/zhangtianyi797/flash-web-app.git .
+            else
+              git pull origin main
+            fi
+            # 安装/更新依赖
+            pip3 install --upgrade pip
+            pip3 install -r requirements.txt
+            # 重启 Flask 服务
+            supervisorctl restart flask-web-app || { supervisorctl add flask-web-app && supervisorctl start flask-web-app; }
+            supervisorctl status flask-web-app
+            echo "部署完成"
+          EOF
+        env:
+          # 从 GitHub Secrets 读取敏感信息（后续配置）
+          TOUGE_SSH_PRIVATE_KEY: ${{ secrets.TOUGE_SSH_PRIVATE_KEY }}
+          TOUGE_SERVER_IP: ${{ secrets.TOUGE_SERVER_IP }}
